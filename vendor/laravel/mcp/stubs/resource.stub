@@ -1,0 +1,25 @@
+<?php
+
+namespace {{ namespace }};
+
+use Laravel\Mcp\Server\Resource;
+use Laravel\Mcp\Request;
+use Laravel\Mcp\Response;
+
+class {{ class }} extends Resource
+{
+    /**
+     * The resource's description.
+     */
+    protected string $description = 'A description of what this resource contains.';
+
+    /**
+     * Handle the resource request.
+     */
+    public function handle(Request $request): Response
+    {
+        //
+
+        return Response::text('The resource content.');
+    }
+}

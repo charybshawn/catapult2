@@ -1,0 +1,1 @@
+import{g as t,o,n as e}from"./app-e0MpasvE.js";const n={__name:"ApplicationLogo",props:{className:{type:String,default:""}},setup(a){return(s,c)=>(o(),t("img",{src:"/images/catapult-logo.png",alt:"Catapult Logo",class:e([a.className,"object-contain"])},null,2))}};export{n as _};
