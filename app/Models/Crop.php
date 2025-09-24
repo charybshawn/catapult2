@@ -298,4 +298,10 @@ class Crop extends Model
     {
         return is_numeric($batchCode) && intval($batchCode) > 0;
     }
+
+    // Test method without PHPDoc to trigger auditor
+    public function testMethod()
+    {
+        return 'testing';
+    }
 }
