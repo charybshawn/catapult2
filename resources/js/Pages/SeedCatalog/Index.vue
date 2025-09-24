@@ -10,7 +10,7 @@
       <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
         <!-- Search and Filter Bar -->
         <div class="bg-white/10 backdrop-blur-sm rounded-lg shadow p-6 mb-6">
-          <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <input
                 v-model="filters.search"
@@ -28,18 +28,6 @@
               >
                 <option value="">All Categories</option>
                 <option v-for="(label, key) in categories" :key="key" :value="key">
-                  {{ label }}
-                </option>
-              </select>
-            </div>
-            <div>
-              <select
-                v-model="filters.market_tier"
-                class="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                @change="performSearch"
-              >
-                <option value="">All Market Tiers</option>
-                <option v-for="(label, key) in marketTiers" :key="key" :value="key">
                   {{ label }}
                 </option>
               </select>
@@ -97,132 +85,128 @@
           </div>
         </div>
 
-        <!-- Seeds Grid -->
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <div
-            v-for="seed in seedCatalog.data"
-            :key="seed.id"
-            class="bg-white/10 backdrop-blur-sm rounded-lg shadow-lg hover:shadow-xl transition-all duration-300"
-          >
-            <div class="p-6">
-              <!-- Selection checkbox -->
-              <div class="flex items-start justify-between mb-4">
-                <input
-                  type="checkbox"
-                  :value="seed.id"
-                  v-model="selectedSeeds"
-                  class="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                >
-                <div class="flex items-center gap-2">
+        <!-- Seeds Data Table -->
+        <div class="bg-white/10 backdrop-blur-sm rounded-lg shadow overflow-hidden">
+          <table class="min-w-full divide-y divide-white/10">
+            <thead class="bg-white/5">
+              <tr>
+                <th class="px-6 py-3 text-left">
+                  <input
+                    type="checkbox"
+                    @change="toggleSelectAll"
+                    :checked="selectedSeeds.length === allSeeds.length && allSeeds.length > 0"
+                    class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  >
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                  Name / Cultivars
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                  Category
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                  Status
+                </th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/10">
+              <tr
+                v-for="seed in allSeeds"
+                :key="seed.id"
+                class="hover:bg-white/5 transition-colors cursor-pointer"
+                @click="openViewModal(seed)"
+              >
+                <td class="px-6 py-4 whitespace-nowrap" @click.stop>
+                  <input
+                    type="checkbox"
+                    :value="seed.id"
+                    v-model="selectedSeeds"
+                    class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  >
+                </td>
+                <td class="px-6 py-4">
+                  <div class="flex items-start">
+                    <button
+                      @click.stop="toggleExpanded(seed.id)"
+                      class="mr-3 mt-0.5 p-1 hover:bg-white/10 rounded transition-colors flex-shrink-0"
+                    >
+                      <svg
+                        v-if="!expandedSeeds.has(seed.id)"
+                        class="w-4 h-4 text-gray-400"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                      </svg>
+                      <svg
+                        v-else
+                        class="w-4 h-4 text-gray-400"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4" />
+                      </svg>
+                    </button>
+                    <div class="flex-1">
+                      <div class="text-sm font-medium text-white mb-1">
+                        {{ seed.common_name }}
+                        <span class="text-xs text-gray-400 ml-2">({{ seed.cultivars.length }} cultivars)</span>
+                      </div>
+                      <div v-show="expandedSeeds.has(seed.id)" class="flex flex-wrap gap-1 mt-2">
+                        <span
+                          v-for="cultivar in seed.cultivars"
+                          :key="cultivar"
+                          class="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-blue-500/20 text-blue-400"
+                        >
+                          {{ cultivar }}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <div class="text-sm text-gray-300">{{ categories[seed.category] }}</div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
                   <span
                     :class="{
-                      'px-2 py-1 text-xs rounded-full': true,
+                      'inline-flex items-center px-2 py-1 text-xs font-medium rounded-full': true,
                       'bg-green-500/20 text-green-400': seed.is_active,
                       'bg-red-500/20 text-red-400': !seed.is_active
                     }"
                   >
                     {{ seed.is_active ? 'Active' : 'Inactive' }}
                   </span>
-                  <span
-                    :class="{
-                      'px-2 py-1 text-xs rounded-full': true,
-                      'bg-purple-500/20 text-purple-400': seed.market_tier === 'premium',
-                      'bg-blue-500/20 text-blue-400': seed.market_tier === 'standard',
-                      'bg-gray-500/20 text-gray-400': seed.market_tier === 'volume'
-                    }"
-                  >
-                    {{ marketTiers[seed.market_tier] }}
-                  </span>
-                </div>
-              </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
 
-              <div class="mb-4">
-                <h3 class="text-lg font-semibold text-white mb-1">
-                  {{ seed.display_name }}
-                </h3>
-                <p class="text-sm text-gray-400">
-                  {{ seed.botanical_name }}
-                </p>
-                <p class="text-xs text-gray-500 mt-1">
-                  ID: {{ seed.catalog_id }}
-                </p>
-              </div>
-
-              <!-- Growing Info -->
-              <div class="grid grid-cols-2 gap-4 mb-4 text-sm">
-                <div>
-                  <span class="text-gray-400">Category:</span>
-                  <p class="text-white">{{ categories[seed.category] }}</p>
-                </div>
-                <div>
-                  <span class="text-gray-400">Total Days:</span>
-                  <p class="text-white">{{ seed.total_days }} days</p>
-                </div>
-                <div>
-                  <span class="text-gray-400">Soak:</span>
-                  <p class="text-white">{{ seed.soak_hours }}h</p>
-                </div>
-                <div>
-                  <span class="text-gray-400">Usage:</span>
-                  <p class="text-white">{{ seed.usage_count }}x</p>
-                </div>
-              </div>
-
-              <!-- Progress Bar for Germination Rate -->
-              <div v-if="seed.target_germination_rate" class="mb-4">
-                <div class="flex justify-between text-sm text-gray-400 mb-1">
-                  <span>Target Germination</span>
-                  <span>{{ seed.target_germination_rate }}%</span>
-                </div>
-                <div class="w-full bg-gray-700 rounded-full h-2">
-                  <div
-                    class="bg-green-500 h-2 rounded-full transition-all duration-300"
-                    :style="{ width: seed.target_germination_rate + '%' }"
-                  ></div>
-                </div>
-              </div>
-
-              <!-- Action Buttons -->
-              <div class="flex gap-2">
-                <Link
-                  :href="route('seed-catalog.show', seed.id)"
-                  class="flex-1 px-3 py-2 text-center bg-blue-600/20 text-blue-400 rounded hover:bg-blue-600/30 transition-colors text-sm"
-                >
-                  View
-                </Link>
-                <Link
-                  :href="route('seed-catalog.edit', seed.id)"
-                  class="flex-1 px-3 py-2 text-center bg-yellow-600/20 text-yellow-400 rounded hover:bg-yellow-600/30 transition-colors text-sm"
-                >
-                  Edit
-                </Link>
-                <button
-                  @click="confirmDelete(seed)"
-                  class="px-3 py-2 bg-red-600/20 text-red-400 rounded hover:bg-red-600/30 transition-colors text-sm"
-                >
-                  Delete
-                </button>
-              </div>
-            </div>
+          <!-- Empty State -->
+          <div v-if="allSeeds.length === 0 && !loading" class="text-center py-12">
+            <div class="text-gray-400 text-lg mb-2">No seeds found</div>
+            <div class="text-gray-500 text-sm">Add some seeds to get started</div>
           </div>
         </div>
 
-        <!-- Pagination -->
-        <div v-if="seedCatalog.last_page > 1" class="mt-8 flex justify-center">
-          <nav class="flex items-center gap-2">
-            <Link
-              v-for="link in seedCatalog.links"
-              :key="link.label"
-              :href="link.url"
-              :class="{
-                'px-3 py-2 rounded transition-colors': true,
-                'bg-blue-600 text-white': link.active,
-                'bg-white/10 text-gray-300 hover:bg-white/20': !link.active && link.url,
-                'text-gray-500 cursor-not-allowed': !link.url
-              }"
-              v-html="link.label"
-            />
-          </nav>
+        <!-- Infinite scroll loading indicator -->
+        <div v-if="loading" class="mt-8 flex justify-center">
+          <div class="flex items-center gap-2 text-gray-400">
+            <svg class="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg>
+            Loading more seeds...
+          </div>
+        </div>
+
+        <!-- End of results indicator -->
+        <div v-if="hasReachedEnd && allSeeds.length > 0" class="mt-8 flex justify-center">
+          <div class="text-gray-500 text-sm">
+            Showing all {{ allSeeds.length }} seeds
+          </div>
         </div>
 
         <!-- Delete Confirmation Modal -->
@@ -230,7 +214,7 @@
           <div class="bg-gray-800 rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
             <h3 class="text-lg font-semibold text-white mb-4">Confirm Delete</h3>
             <p class="text-gray-300 mb-6">
-              Are you sure you want to delete "{{ seedToDelete.display_name }}"?
+              Are you sure you want to delete "{{ seedToDelete.common_name }}"?
               <span v-if="seedToDelete.usage_count > 0" class="text-yellow-400">
                 This seed has been used {{ seedToDelete.usage_count }} times and may be deactivated instead of deleted.
               </span>
@@ -252,13 +236,25 @@
           </div>
         </div>
 
+
         <!-- Create Seed Modal -->
         <CreateSeedModal
           :show="showCreateModal"
           :categories="categories"
-          :marketTiers="marketTiers"
           @close="closeCreateModal"
           @created="handleSeedCreated"
+        />
+
+        <!-- View/Edit Seed Modal -->
+        <ViewEditSeedModal
+          :show="showViewModal"
+          :seed="selectedSeed"
+          :mode="viewModalMode"
+          :categories="categories"
+          @close="closeViewModal"
+          @switch-to-edit="switchToEditMode"
+          @updated="handleSeedCreated"
+          @deleted="handleSeedCreated"
         />
       </div>
     </div>
@@ -266,33 +262,48 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue'
 import CreateSeedModal from '@/Components/Modals/CreateSeedModal.vue'
+import ViewEditSeedModal from '@/Components/Modals/ViewEditSeedModal.vue'
 
 const props = defineProps({
   seedCatalog: Object,
   filters: Object,
   categories: Object,
-  marketTiers: Object
 })
 
 const selectedSeeds = ref([])
 const showBulkActions = ref(false)
 const seedToDelete = ref(null)
 const showCreateModal = ref(false)
+const showViewModal = ref(false)
+const selectedSeed = ref(null)
+const viewModalMode = ref('view') // 'view' or 'edit'
+const expandedSeeds = ref(new Set())
+
+// Infinite scroll state
+const allSeeds = ref([...props.seedCatalog.data])
+const loading = ref(false)
+const hasReachedEnd = ref(props.seedCatalog.current_page === props.seedCatalog.last_page)
+const currentPage = ref(props.seedCatalog.current_page)
 
 const filters = reactive({
   search: props.filters.search || '',
-  category: props.filters.category || '',
-  market_tier: props.filters.market_tier || ''
+  category: props.filters.category || ''
 })
 
 const performSearch = () => {
   router.get(route('seed-catalog.index'), filters, {
-    preserveState: true,
-    replace: true
+    preserveState: false,
+    replace: true,
+    onSuccess: (page) => {
+      // Reset infinite scroll state with new data
+      allSeeds.value = page.props.seedCatalog.data
+      currentPage.value = page.props.seedCatalog.current_page
+      hasReachedEnd.value = page.props.seedCatalog.current_page === page.props.seedCatalog.last_page
+    }
   })
 }
 
@@ -312,6 +323,13 @@ const confirmDelete = (seed) => {
   seedToDelete.value = seed
 }
 
+const confirmDeleteById = (seedId) => {
+  const seed = allSeeds.value.find(s => s.id === seedId)
+  if (seed) {
+    seedToDelete.value = seed
+  }
+}
+
 const deleteSeed = () => {
   router.delete(route('seed-catalog.destroy', seedToDelete.value.id), {
     onSuccess: () => {
@@ -328,11 +346,107 @@ const closeCreateModal = () => {
   showCreateModal.value = false
 }
 
+const openViewModal = (seed) => {
+  selectedSeed.value = seed
+  viewModalMode.value = 'view'
+  showViewModal.value = true
+}
+
+const closeViewModal = () => {
+  showViewModal.value = false
+  selectedSeed.value = null
+  viewModalMode.value = 'view'
+}
+
+const switchToEditMode = () => {
+  viewModalMode.value = 'edit'
+}
+
 const handleSeedCreated = () => {
   // Refresh the page to show the new seed
   router.get(route('seed-catalog.index'), filters, {
-    preserveState: true,
-    replace: true
+    preserveState: false,
+    replace: true,
+    onSuccess: (page) => {
+      // Reset infinite scroll state with new data
+      allSeeds.value = page.props.seedCatalog.data
+      currentPage.value = page.props.seedCatalog.current_page
+      hasReachedEnd.value = page.props.seedCatalog.current_page === page.props.seedCatalog.last_page
+    }
   })
 }
+
+const toggleSelectAll = (event) => {
+  if (event.target.checked) {
+    selectedSeeds.value = allSeeds.value.map(seed => seed.id)
+  } else {
+    selectedSeeds.value = []
+  }
+}
+
+const toggleExpanded = (seedId) => {
+  if (expandedSeeds.value.has(seedId)) {
+    expandedSeeds.value.delete(seedId)
+  } else {
+    expandedSeeds.value.add(seedId)
+  }
+}
+
+
+onMounted(() => {
+  window.addEventListener('scroll', handleScroll)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('scroll', handleScroll)
+})
+
+// Infinite scroll methods
+const loadMoreSeeds = async () => {
+  if (loading.value || hasReachedEnd.value) return
+
+  loading.value = true
+  const nextPage = currentPage.value + 1
+
+  try {
+    const response = await fetch(route('seed-catalog.index') + `?page=${nextPage}&${new URLSearchParams(filters)}`, {
+      headers: {
+        'Accept': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      }
+    })
+
+    const data = await response.json()
+
+    if (data.props && data.props.seedCatalog) {
+      allSeeds.value.push(...data.props.seedCatalog.data)
+      currentPage.value = nextPage
+      hasReachedEnd.value = nextPage >= data.props.seedCatalog.last_page
+    }
+  } catch (error) {
+    console.error('Error loading more seeds:', error)
+  } finally {
+    loading.value = false
+  }
+}
+
+const handleScroll = () => {
+  const scrollTop = window.pageYOffset
+  const windowHeight = window.innerHeight
+  const documentHeight = document.documentElement.scrollHeight
+
+  // Load more when within 200px of the bottom
+  if (scrollTop + windowHeight >= documentHeight - 200) {
+    loadMoreSeeds()
+  }
+}
+
+// Reset seeds when filters change
+const resetAndSearch = () => {
+  allSeeds.value = []
+  currentPage.value = 0
+  hasReachedEnd.value = false
+  performSearch()
+}
+
 </script>

@@ -20,8 +20,7 @@ class SeedCatalogController extends Controller
         $request->validate([
             'search' => 'nullable|string|max:255',
             'category' => 'nullable|string',
-            'market_tier' => 'nullable|string|in:premium,standard,volume',
-            'sort_by' => 'nullable|string|in:display_name,category,market_tier,total_days,usage_count,created_at',
+            'sort_by' => 'nullable|string|in:common_name,category,usage_count,created_at',
             'sort_direction' => 'nullable|string|in:asc,desc',
             'per_page' => 'nullable|integer|min:5|max:100',
         ]);
@@ -29,21 +28,16 @@ class SeedCatalogController extends Controller
         $query = SeedCatalog::query()
             ->when($request->search, function ($query, $search) {
                 $query->where(function ($q) use ($search) {
-                    $q->where('display_name', 'like', "%{$search}%")
-                      ->orWhere('common_name', 'like', "%{$search}%")
-                      ->orWhere('cultivar', 'like', "%{$search}%")
-                      ->orWhere('botanical_name', 'like', "%{$search}%")
+                    $q->where('common_name', 'like', "%{$search}%")
+                      ->orWhereJsonContains('cultivars', $search)
                       ->orWhere('catalog_id', 'like', "%{$search}%");
                 });
             })
             ->when($request->category, function ($query, $category) {
                 $query->where('category', $category);
-            })
-            ->when($request->market_tier, function ($query, $tier) {
-                $query->where('market_tier', $tier);
             });
 
-        $sortBy = $request->sort_by ?? 'display_name';
+        $sortBy = $request->sort_by ?? 'common_name';
         $sortDirection = $request->sort_direction ?? 'asc';
         $query->orderBy($sortBy, $sortDirection);
 
@@ -51,9 +45,8 @@ class SeedCatalogController extends Controller
 
         return Inertia::render('SeedCatalog/Index', [
             'seedCatalog' => $seedCatalog,
-            'filters' => $request->only(['search', 'category', 'market_tier', 'sort_by', 'sort_direction']),
+            'filters' => $request->only(['search', 'category', 'sort_by', 'sort_direction']),
             'categories' => SeedCatalog::getCategories(),
-            'marketTiers' => SeedCatalog::getMarketTiers(),
         ]);
     }
 
@@ -73,37 +66,11 @@ class SeedCatalogController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $validated = $request->validate([
-            'botanical_name' => 'required|string|max:255',
             'common_name' => 'required|string|max:255',
-            'cultivar' => 'required|string|max:255',
+            'cultivars' => 'required|array|min:1',
+            'cultivars.*' => 'required|string|max:255',
             'category' => ['required', Rule::in(array_keys(SeedCatalog::getCategories()))],
-
-            // Growing parameters
-            'seed_density_oz_per_1020' => 'nullable|numeric|between:0.01,10.00',
-            'soak_hours' => 'required|integer|between:0,48',
-            'blackout_days' => 'required|integer|between:0,10',
-            'light_days' => 'required|integer|between:1,20',
-
-            // Market data
-            'market_tier' => ['required', Rule::in(array_keys(SeedCatalog::getMarketTiers()))],
-            'flavor_profile' => 'nullable|string|max:500',
-            'description' => 'nullable|string|max:2000',
-            'seasonal_notes' => 'nullable|array',
-
-            // Quality standards
-            'target_germination_rate' => 'nullable|numeric|between:50.0,100.0',
-            'storage_requirements' => 'nullable|array',
-
-            // Supplier information
-            'suppliers' => 'nullable|array',
-            'avg_price_per_lb' => 'nullable|numeric|between:0.01,1000.00',
-            'typical_shelf_life_months' => 'nullable|integer|between:1,60',
-
-            // System fields
             'is_active' => 'boolean',
-            'is_organic_available' => 'boolean',
-            'growing_tips' => 'nullable|string|max:2000',
-            'image_url' => 'nullable|url|max:500',
         ]);
 
         DB::transaction(function () use ($validated) {
@@ -111,7 +78,7 @@ class SeedCatalogController extends Controller
         });
 
         return redirect()->route('seed-catalog.index')
-            ->with('success', "Seed catalog entry '{$validated['common_name']} - {$validated['cultivar']}' created successfully.");
+            ->with('success', "Seed catalog entry '{$validated['common_name']}' created successfully.");
     }
 
     /**
@@ -124,7 +91,6 @@ class SeedCatalogController extends Controller
         return Inertia::render('SeedCatalog/Show', [
             'seedCatalog' => $seedCatalog,
             'categories' => SeedCatalog::getCategories(),
-            'marketTiers' => SeedCatalog::getMarketTiers(),
         ]);
     }
 
@@ -136,7 +102,6 @@ class SeedCatalogController extends Controller
         return Inertia::render('SeedCatalog/Edit', [
             'seedCatalog' => $seedCatalog,
             'categories' => SeedCatalog::getCategories(),
-            'marketTiers' => SeedCatalog::getMarketTiers(),
         ]);
     }
 
@@ -146,37 +111,11 @@ class SeedCatalogController extends Controller
     public function update(Request $request, SeedCatalog $seedCatalog): RedirectResponse
     {
         $validated = $request->validate([
-            'botanical_name' => 'required|string|max:255',
             'common_name' => 'required|string|max:255',
-            'cultivar' => 'required|string|max:255',
+            'cultivars' => 'required|array|min:1',
+            'cultivars.*' => 'required|string|max:255',
             'category' => ['required', Rule::in(array_keys(SeedCatalog::getCategories()))],
-
-            // Growing parameters
-            'seed_density_oz_per_1020' => 'nullable|numeric|between:0.01,10.00',
-            'soak_hours' => 'required|integer|between:0,48',
-            'blackout_days' => 'required|integer|between:0,10',
-            'light_days' => 'required|integer|between:1,20',
-
-            // Market data
-            'market_tier' => ['required', Rule::in(array_keys(SeedCatalog::getMarketTiers()))],
-            'flavor_profile' => 'nullable|string|max:500',
-            'description' => 'nullable|string|max:2000',
-            'seasonal_notes' => 'nullable|array',
-
-            // Quality standards
-            'target_germination_rate' => 'nullable|numeric|between:50.0,100.0',
-            'storage_requirements' => 'nullable|array',
-
-            // Supplier information
-            'suppliers' => 'nullable|array',
-            'avg_price_per_lb' => 'nullable|numeric|between:0.01,1000.00',
-            'typical_shelf_life_months' => 'nullable|integer|between:1,60',
-
-            // System fields
             'is_active' => 'boolean',
-            'is_organic_available' => 'boolean',
-            'growing_tips' => 'nullable|string|max:2000',
-            'image_url' => 'nullable|url|max:500',
         ]);
 
         DB::transaction(function () use ($seedCatalog, $validated) {
@@ -184,7 +123,7 @@ class SeedCatalogController extends Controller
         });
 
         return redirect()->route('seed-catalog.show', $seedCatalog)
-            ->with('success', "Seed catalog entry '{$validated['common_name']} - {$validated['cultivar']}' updated successfully.");
+            ->with('success', "Seed catalog entry '{$validated['common_name']}' updated successfully.");
     }
 
     /**

@@ -14,44 +14,17 @@ class SeedCatalog extends Model
 
     protected $fillable = [
         'catalog_id',
-        'botanical_name',
         'common_name',
-        'cultivar',
+        'cultivars',
         'category',
-        'display_name',
-        'seed_density_oz_per_1020',
-        'soak_hours',
-        'blackout_days',
-        'light_days',
-        'total_days',
-        'market_tier',
-        'flavor_profile',
-        'description',
-        'seasonal_notes',
-        'target_germination_rate',
-        'storage_requirements',
-        'suppliers',
-        'avg_price_per_lb',
-        'typical_shelf_life_months',
         'is_active',
-        'is_organic_available',
-        'growing_tips',
-        'image_url',
         'usage_count',
-        'last_used_at',
-        'success_rate'
+        'last_used_at'
     ];
 
     protected $casts = [
-        'seasonal_notes' => 'array',
-        'storage_requirements' => 'array',
-        'suppliers' => 'array',
-        'seed_density_oz_per_1020' => 'decimal:2',
-        'target_germination_rate' => 'decimal:1',
-        'avg_price_per_lb' => 'decimal:2',
-        'success_rate' => 'decimal:1',
+        'cultivars' => 'array',
         'is_active' => 'boolean',
-        'is_organic_available' => 'boolean',
         'last_used_at' => 'datetime'
     ];
 
@@ -66,34 +39,18 @@ class SeedCatalog extends Model
             if (empty($seedCatalog->catalog_id)) {
                 $seedCatalog->catalog_id = $seedCatalog->generateCatalogId();
             }
-            if (empty($seedCatalog->display_name)) {
-                $seedCatalog->display_name = $seedCatalog->common_name . ' - ' . $seedCatalog->cultivar;
-            }
-            if (empty($seedCatalog->total_days)) {
-                $seedCatalog->total_days = $seedCatalog->blackout_days + $seedCatalog->light_days;
-            }
-        });
-
-        static::updating(function ($seedCatalog) {
-            if ($seedCatalog->isDirty(['common_name', 'cultivar'])) {
-                $seedCatalog->display_name = $seedCatalog->common_name . ' - ' . $seedCatalog->cultivar;
-            }
-            if ($seedCatalog->isDirty(['blackout_days', 'light_days'])) {
-                $seedCatalog->total_days = $seedCatalog->blackout_days + $seedCatalog->light_days;
-            }
         });
     }
 
     /**
-     * Generate unique catalog ID based on category, common name, and cultivar
+     * Generate unique catalog ID based on category and common name only
      */
     public function generateCatalogId(): string
     {
         $categoryCode = strtoupper(substr($this->category, 0, 5));
-        $nameCode = strtoupper(substr(str_replace(' ', '', $this->common_name), 0, 4));
-        $cultivarCode = strtoupper(substr(str_replace(' ', '', $this->cultivar), 0, 4));
+        $nameCode = strtoupper(substr(str_replace(' ', '', $this->common_name), 0, 8));
 
-        $baseId = $categoryCode . '-' . $nameCode . '-' . $cultivarCode;
+        $baseId = $categoryCode . '-' . $nameCode;
 
         // Ensure uniqueness
         $counter = 1;
@@ -104,6 +61,26 @@ class SeedCatalog extends Model
         }
 
         return $catalogId;
+    }
+
+    /**
+     * Get display name (computed attribute)
+     */
+    public function getDisplayNameAttribute(): string
+    {
+        return $this->common_name;
+    }
+
+    /**
+     * Get cultivar list formatted for display
+     */
+    public function getCultivarListAttribute(): string
+    {
+        if (!$this->cultivars || count($this->cultivars) === 0) {
+            return 'No cultivars';
+        }
+
+        return implode(', ', $this->cultivars);
     }
 
     /**
@@ -122,13 +99,6 @@ class SeedCatalog extends Model
         return $query->where('category', $category);
     }
 
-    /**
-     * Scope by market tier
-     */
-    public function scopeMarketTier($query, $tier)
-    {
-        return $query->where('market_tier', $tier);
-    }
 
     /**
      * Get recipes that use this seed
@@ -163,44 +133,5 @@ class SeedCatalog extends Model
         ];
     }
 
-    /**
-     * Get market tier options
-     */
-    public static function getMarketTiers(): array
-    {
-        return [
-            'premium' => 'Premium (High-value specialty)',
-            'standard' => 'Standard (Regular production)',
-            'volume' => 'Volume (Bulk production)'
-        ];
-    }
 
-    /**
-     * Calculate estimated cost per tray
-     */
-    public function getEstimatedCostPerTrayAttribute(): ?float
-    {
-        if ($this->avg_price_per_lb && $this->seed_density_oz_per_1020) {
-            $pricePerOz = $this->avg_price_per_lb / 16;
-            return round($pricePerOz * $this->seed_density_oz_per_1020, 2);
-        }
-        return null;
-    }
-
-    /**
-     * Get growing difficulty level
-     */
-    public function getGrowingDifficultyAttribute(): string
-    {
-        $totalDays = $this->total_days;
-        $soakHours = $this->soak_hours;
-
-        if ($totalDays <= 7 && $soakHours <= 4) {
-            return 'Easy';
-        } elseif ($totalDays <= 12 && $soakHours <= 8) {
-            return 'Moderate';
-        } else {
-            return 'Advanced';
-        }
-    }
 }
