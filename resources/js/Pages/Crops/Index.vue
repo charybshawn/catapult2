@@ -6,6 +6,7 @@ import GlassContainer from '@/Components/Layout/GlassContainer.vue';
 import SearchBar from '@/Components/Layout/SearchBar.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
+import AdvanceStageModal from '@/Components/Modals/AdvanceStageModal.vue';
 
 // Import Heroicons
 import {
@@ -72,6 +73,9 @@ const showFilters = ref(false);
 const showBulkActions = ref(false);
 const showDeleteConfirm = ref(false);
 const isDeleting = ref(false);
+const showAdvanceStageModal = ref(false);
+const pendingAdvanceData = ref(null);
+const isAdvancing = ref(false);
 
 // Use actual crops data from props
 const cropsData = computed(() => props.crops?.data || []);
@@ -101,12 +105,6 @@ const stageConfig = {
     color: 'yellow',
     bgClass: 'bg-yellow-500/20 text-yellow-300',
     icon: ClockIcon
-  },
-  ready: {
-    label: 'Ready to Harvest',
-    color: 'green',
-    bgClass: 'bg-green-500/20 text-green-300',
-    icon: CheckCircleIcon
   },
   harvested: {
     label: 'Harvested',
@@ -139,8 +137,8 @@ const statusConfig = {
     color: 'orange',
     bgClass: 'bg-orange-500/20 text-orange-300'
   },
-  completed: {
-    label: 'Completed',
+  harvested: {
+    label: 'Harvested',
     color: 'purple',
     bgClass: 'bg-purple-500/20 text-purple-300'
   },
@@ -263,26 +261,76 @@ const formatDate = (date) => {
   return new Date(date).toLocaleDateString();
 };
 
-const bulkAdvanceStage = () => {
+const showAdvanceStageModalForBulk = () => {
   if (viewMode.value === 'batches') {
-    // Advance entire batches - ensure batch_ids are strings
-    router.post(route('crops.bulk-advance-batches'), {
-      batch_ids: Array.from(selectedBatches.value).map(id => String(id))
-    }, {
-      onSuccess: () => {
-        clearSelection();
-      }
-    });
+    pendingAdvanceData.value = {
+      type: 'bulk-batches',
+      ids: Array.from(selectedBatches.value).map(id => String(id)),
+      count: selectedBatchesCount.value,
+      itemType: 'batch'
+    };
   } else {
-    // Advance selected trays - ensure crop_ids are numbers
-    router.post(route('crops.bulk-advance-stage'), {
-      crop_ids: Array.from(selectedTrays.value).map(id => Number(id))
-    }, {
-      onSuccess: () => {
-        clearSelection();
-      }
-    });
+    pendingAdvanceData.value = {
+      type: 'bulk-trays',
+      ids: Array.from(selectedTrays.value).map(id => Number(id)),
+      count: selectedTraysCount.value,
+      itemType: 'tray'
+    };
   }
+  showAdvanceStageModal.value = true;
+};
+
+const showAdvanceStageModalForSingle = (batch) => {
+  pendingAdvanceData.value = {
+    type: 'single-batch',
+    ids: [String(batch.crop_batch)],
+    count: 1,
+    itemType: 'batch'
+  };
+  showAdvanceStageModal.value = true;
+};
+
+const handleAdvanceStageConfirm = (dateTime) => {
+  if (!pendingAdvanceData.value) return;
+
+  isAdvancing.value = true;
+  const data = pendingAdvanceData.value;
+
+  const payload = {
+    stage_change_date: dateTime
+  };
+
+  let routeName = '';
+
+  if (data.type === 'bulk-batches') {
+    routeName = 'crops.bulk-advance-batches';
+    payload.batch_ids = data.ids;
+  } else if (data.type === 'bulk-trays') {
+    routeName = 'crops.bulk-advance-stage';
+    payload.crop_ids = data.ids;
+  } else if (data.type === 'single-batch') {
+    routeName = 'crops.bulk-advance-batches';
+    payload.batch_ids = data.ids;
+  }
+
+  router.post(route(routeName), payload, {
+    onSuccess: () => {
+      clearSelection();
+      closeAdvanceStageModal();
+    },
+    onError: () => {
+      isAdvancing.value = false;
+    },
+    onFinish: () => {
+      isAdvancing.value = false;
+    }
+  });
+};
+
+const closeAdvanceStageModal = () => {
+  showAdvanceStageModal.value = false;
+  pendingAdvanceData.value = null;
+  isAdvancing.value = false;
 };
 
 const showDeleteConfirmation = () => {
@@ -488,7 +536,7 @@ onMounted(() => {
             <div class="flex items-center space-x-2">
               <PrimaryButton
                 v-if="canBulkAdvanceStage"
-                @click="bulkAdvanceStage"
+                @click="showAdvanceStageModalForBulk"
                 variant="green"
                 size="small"
                 class="flex items-center space-x-2"
@@ -553,70 +601,58 @@ onMounted(() => {
                   />
 
                   <div class="flex-1">
-                    <div class="mb-2">
-                      <h3 class="text-lg font-semibold text-white">Batch {{ batch.crop_batch }}</h3>
-                      <span class="text-gray-300 text-sm">{{ batch.variety }}</span>
+                    <div class="mb-3">
+                      <h3 class="text-lg font-semibold text-white">{{ batch.variety }}</h3>
+                      <span class="text-gray-400 text-sm">Batch {{ batch.crop_batch }}</span>
                     </div>
 
-                    <!-- Batch Summary -->
-                    <div class="flex flex-wrap items-center gap-2 text-xs text-gray-300 mb-2">
-                      <span>{{ batch.total_trays }} {{ batch.total_trays === 1 ? 'tray' : 'trays' }}</span>
-                      <span class="text-gray-500">•</span>
-                      <span class="truncate">{{ batch.location }}</span>
-                      <span class="text-gray-500">•</span>
-                      <span>{{ formatDate(batch.planted_at) }}</span>
+                    <!-- Requested Fields -->
+                    <div class="space-y-2 mb-3">
+                      <!-- 1. Current Growth Cycle -->
+                      <div class="flex justify-between items-center">
+                        <span class="text-gray-400 text-sm">Growth Cycle:</span>
+                        <span :class="['px-2 py-0.5 rounded-full text-xs font-medium', stageConfig[batch.current_stage]?.bgClass]">
+                          {{ stageConfig[batch.current_stage]?.label }}
+                        </span>
+                      </div>
+
+                      <!-- 2. Progress -->
+                      <div>
+                        <div class="flex justify-between items-center mb-1">
+                          <span class="text-gray-400 text-sm">Progress:</span>
+                          <span class="text-white text-sm font-medium">{{ batch.progress }}%</span>
+                        </div>
+                        <div class="w-full bg-white/10 rounded-full h-1.5">
+                          <div
+                            :class="['h-1.5 rounded-full transition-all duration-300', getProgressColor(batch.progress, batch.current_stage)]"
+                            :style="{ width: `${batch.progress}%` }"
+                          ></div>
+                        </div>
+                      </div>
+
+                      <!-- 3. Active/Done -->
+                      <div class="flex justify-between items-center">
+                        <span class="text-gray-400 text-sm">Status:</span>
+                        <div class="flex items-center space-x-3 text-xs">
+                          <span class="text-green-300">{{ batch.active_trays }} active</span>
+                          <span v-if="batch.harvested_trays > 0" class="text-purple-300">{{ batch.harvested_trays }} done</span>
+                          <span v-if="batch.failed_trays > 0" class="text-red-300">{{ batch.failed_trays }} failed</span>
+                        </div>
+                      </div>
+
+                      <!-- 4. Tray IDs -->
+                      <div class="flex justify-between items-start">
+                        <span class="text-gray-400 text-sm">Trays:</span>
+                        <span class="text-white text-sm font-medium text-right max-w-48 break-words">
+                          {{ batch.trays && batch.trays.length > 0 ? batch.trays.map(t => t.tray_id).join(', ') : 'No trays' }}
+                        </span>
+                      </div>
                     </div>
 
-                    <!-- Status and Stage Badges -->
-                    <div class="flex flex-wrap gap-1 mb-2">
-                      <span :class="['px-2 py-0.5 rounded-full text-[10px] font-medium', statusConfig[batch.status]?.bgClass]">
-                        {{ statusConfig[batch.status]?.label }}
-                      </span>
-                      <span :class="['px-2 py-0.5 rounded-full text-[10px] font-medium', stageConfig[batch.current_stage]?.bgClass]">
-                        {{ stageConfig[batch.current_stage]?.label }}
-                      </span>
-                    </div>
-
-                    <!-- Progress Bar -->
-                    <div class="mb-2">
-                      <div class="flex justify-between text-xs mb-1">
-                        <span class="text-gray-400">Progress</span>
-                        <span class="text-white">{{ batch.progress }}%</span>
-                      </div>
-                      <div class="w-full bg-white/10 rounded-full h-2">
-                        <div
-                          :class="['h-2 rounded-full transition-all duration-300', getProgressColor(batch.progress, batch.current_stage)]"
-                          :style="{ width: `${batch.progress}%` }"
-                        ></div>
-                      </div>
-                    </div>
-
-                    <!-- Tray Status Summary -->
-                    <div class="flex flex-wrap items-center gap-2 text-xs">
-                      <div class="flex items-center space-x-1">
-                        <div class="w-1.5 h-1.5 bg-green-500 rounded-full"></div>
-                        <span class="text-gray-300">{{ batch.active_trays }} active</span>
-                      </div>
-                      <div v-if="batch.completed_trays > 0" class="flex items-center space-x-1">
-                        <div class="w-1.5 h-1.5 bg-purple-500 rounded-full"></div>
-                        <span class="text-gray-300">{{ batch.completed_trays }} done</span>
-                      </div>
-                      <div v-if="batch.failed_trays > 0" class="flex items-center space-x-1">
-                        <div class="w-1.5 h-1.5 bg-red-500 rounded-full"></div>
-                        <span class="text-gray-300">{{ batch.failed_trays }} failed</span>
-                      </div>
-                    </div>
                   </div>
                 </div>
               </div>
 
-              <!-- Tray List (Simple comma-delimited) -->
-              <div v-if="batch.trays && batch.trays.length > 0" class="mt-3 pt-3 border-t border-white/10">
-                <div class="text-xs">
-                  <span class="text-gray-400">Trays: </span>
-                  <span class="text-gray-300">{{ batch.trays.map(t => t.tray_id).join(', ') }}</span>
-                </div>
-              </div>
 
               <!-- Batch Actions -->
               <div class="flex justify-between items-center pt-4 border-t border-white/10 mt-4">
@@ -651,46 +687,7 @@ onMounted(() => {
                 <div class="flex items-center space-x-2">
                   <button
                     v-if="batch.status === 'active'"
-                    @click.stop="() => {
-                      console.log('=== ADVANCE BATCH DEBUG ===');
-                      console.log('1. Click event triggered');
-                      console.log('2. Batch data:', batch);
-                      console.log('3. Batch status:', batch.status);
-                      console.log('4. Batch crop_batch:', batch.crop_batch);
-                      console.log('5. Route function:', route);
-                      console.log('6. Route URL:', route('crops.bulk-advance-batches'));
-                      console.log('7. Router object:', router);
-
-                      const payload = { batch_ids: [String(batch.crop_batch)] };
-                      console.log('8. Payload to send:', payload);
-
-                      try {
-                        console.log('9. Attempting router.post...');
-                        router.post(route('crops.bulk-advance-batches'), payload, {
-                          onStart: () => {
-                            console.log('10. Request started');
-                          },
-                          onProgress: (progress) => {
-                            console.log('11. Request progress:', progress);
-                          },
-                          onSuccess: (page) => {
-                            console.log('12. Request successful:', page);
-                            // Reload the page to show updated stage
-                            router.reload();
-                          },
-                          onError: (errors) => {
-                            console.error('13. Request error:', errors);
-                          },
-                          onFinish: () => {
-                            console.log('14. Request finished');
-                          }
-                        });
-                        console.log('15. router.post called successfully');
-                      } catch (error) {
-                        console.error('16. Exception in router.post:', error);
-                      }
-                      console.log('=== END DEBUG ===');
-                    }"
+                    @click.stop="() => showAdvanceStageModalForSingle(batch)"
                     class="flex items-center space-x-1 px-3 py-1.5 bg-green-500/20 hover:bg-green-500/30 text-green-300 hover:text-green-200 border border-green-400/50 hover:border-green-400/70 rounded-lg transition-all duration-200 text-sm font-medium"
                   >
                     <ArrowRightIcon class="w-4 h-4" />
@@ -917,6 +914,16 @@ onMounted(() => {
           </div>
         </GlassContainer>
       </div>
+
+      <!-- Advance Stage Modal -->
+      <AdvanceStageModal
+        :show="showAdvanceStageModal"
+        :item-count="pendingAdvanceData?.count || 1"
+        :item-type="pendingAdvanceData?.itemType || 'batch'"
+        :is-processing="isAdvancing"
+        @close="closeAdvanceStageModal"
+        @confirm="handleAdvanceStageConfirm"
+      />
     </div>
   </AuthenticatedLayout>
 </template>

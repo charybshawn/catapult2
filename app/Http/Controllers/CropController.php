@@ -23,7 +23,7 @@ class CropController extends Controller
     {
         $request->validate([
             'search' => 'nullable|string|max:255',
-            'status' => 'nullable|string|in:active,completed,failed,cancelled',
+            'status' => 'nullable|string|in:active,harvested,failed,cancelled',
             'stage' => 'nullable|integer|exists:crop_stages,id',
             'sort_by' => 'nullable|string|in:crop_batch,current_stage_id,status,created_at',
             'sort_direction' => 'nullable|string|in:asc,desc',
@@ -33,7 +33,7 @@ class CropController extends Controller
 
         $viewMode = $request->view_mode ?? 'batches';
 
-        $query = Crop::with(['currentStage'])
+        $query = Crop::with(['currentStage', 'recipe'])
             ->when($request->search, function ($query, $search) {
                 $query->where(function ($q) use ($search) {
                     $q->where('crop_batch', 'like', "%{$search}%")
@@ -58,19 +58,28 @@ class CropController extends Controller
                     $firstTray = $trays->first();
                     $totalTrays = $trays->count();
                     $activeTrays = $trays->where('status', 'active')->count();
-                    $completedTrays = $trays->where('status', 'completed')->count();
+                    $harvestedTrays = $trays->where('status', 'harvested')->count();
                     $failedTrays = $trays->where('status', 'failed')->count();
 
-                    // Calculate batch progress based on stage sort_order
+                    // Calculate batch progress based on stage progression
                     $avgProgress = $trays->map(function ($tray) {
-                        $stageOrder = $tray->currentStage ? $tray->currentStage->sort_order : 1;
-                        return ($stageOrder / 6) * 100; // 6 is the max sort_order
+                        $currentStage = $tray->current_stage;
+                        $stageOrder = match($currentStage) {
+                            Crop::STAGE_PLANTED => 1,
+                            Crop::STAGE_SOAKING => 2,
+                            Crop::STAGE_GERMINATION => 3,
+                            Crop::STAGE_BLACKOUT => 4,
+                            Crop::STAGE_LIGHT => 5,
+                            Crop::STAGE_HARVESTED => 6,
+                            default => 1
+                        };
+                        return ($stageOrder / 6) * 100; // 6 stages total
                     })->avg();
 
                     // Determine batch status
                     $batchStatus = 'active';
-                    if ($completedTrays === $totalTrays) {
-                        $batchStatus = 'completed';
+                    if ($harvestedTrays === $totalTrays) {
+                        $batchStatus = 'harvested';
                     } elseif ($failedTrays > ($totalTrays * 0.2)) { // More than 20% failed
                         $batchStatus = 'attention';
                     }
@@ -81,7 +90,7 @@ class CropController extends Controller
                     return [
                         'id' => $batchId,
                         'crop_batch' => $batchId,
-                        'variety' => $firstTray->tray_type, // Using tray_type as variety for now
+                        'variety' => $firstTray->recipe ? $firstTray->recipe->name : $this->extractVarietyFromNotes($firstTray->notes),
                         'location' => $firstTray->location,
                         'planted_at' => $firstTray->soak_started_at, // Using soak_started_at as planted_at
                         'current_stage' => $mostCommonStage,
@@ -90,18 +99,24 @@ class CropController extends Controller
                         'created_at' => $firstTray->created_at,
                         'total_trays' => $totalTrays,
                         'active_trays' => $activeTrays,
-                        'completed_trays' => $completedTrays,
+                        'harvested_trays' => $harvestedTrays,
                         'failed_trays' => $failedTrays,
                         'progress' => round($avgProgress, 1),
                         'trays' => $trays->map(function ($tray) {
+                            // Get the most recent stage date for stage_started_at
+                            $stageStartedAt = $tray->harvested_at ?:
+                                ($tray->light_started_at ?:
+                                ($tray->blackout_started_at ?:
+                                ($tray->germination_started_at ?: $tray->soak_started_at)));
+
                             return [
                                 'id' => $tray->id,
                                 'tray_id' => $tray->tray_id,
-                                'current_stage' => $tray->currentStage ? $tray->currentStage->slug : 'unknown',
+                                'current_stage' => $tray->current_stage,
                                 'status' => $tray->status,
                                 'location' => $tray->location,
                                 'notes' => $tray->notes,
-                                'stage_started_at' => $tray->soak_started_at,
+                                'stage_started_at' => $stageStartedAt,
                                 'days_in_production' => $tray->soak_started_at ?
                                     $tray->soak_started_at->diffInDays(now()) : 0,
                             ];
@@ -147,7 +162,7 @@ class CropController extends Controller
                 'filters' => $request->only(['search', 'status', 'stage', 'sort_by', 'sort_direction']),
                 'statuses' => [
                     'active' => 'Active',
-                    'completed' => 'Completed',
+                    'harvested' => 'Harvested',
                     'failed' => 'Failed',
                     'cancelled' => 'Cancelled',
                     'attention' => 'Needs Attention'
@@ -169,8 +184,8 @@ class CropController extends Controller
                     'id' => $crop->id,
                     'crop_batch' => $crop->crop_batch,
                     'tray_id' => $crop->tray_id,
-                    'variety' => $crop->tray_type,
-                    'current_stage' => $crop->currentStage ? $crop->currentStage->slug : 'unknown',
+                    'variety' => $crop->recipe ? $crop->recipe->name : $this->extractVarietyFromNotes($crop->notes),
+                    'current_stage' => $crop->current_stage,
                     'status' => $crop->status,
                     'location' => $crop->location,
                     'days_in_production' => $crop->soak_started_at ?
@@ -189,7 +204,7 @@ class CropController extends Controller
                 'filters' => $request->only(['search', 'status', 'stage', 'sort_by', 'sort_direction']),
                 'statuses' => [
                     'active' => 'Active',
-                    'completed' => 'Completed',
+                    'harvested' => 'Harvested',
                     'failed' => 'Failed',
                     'cancelled' => 'Cancelled'
                 ],
@@ -197,6 +212,26 @@ class CropController extends Controller
                 'varieties' => Crop::select('tray_type')->distinct()->pluck('tray_type')->filter()->values()
             ]);
         }
+    }
+
+    /**
+     * Extract variety/recipe name from crop notes
+     */
+    private function extractVarietyFromNotes($notes)
+    {
+        if (!$notes) return 'Unknown';
+
+        // Extract variety from notes like "Fresh batch of pea shoots for weekly production (Tray A1)"
+        if (preg_match('/batch of (.+?) for/', $notes, $matches)) {
+            return ucwords(trim($matches[1]));
+        }
+
+        // Fallback: look for common variety patterns
+        if (preg_match('/(pea shoots?|sunflower|radish|broccoli|arugula|microgreens?)/i', $notes, $matches)) {
+            return ucwords(trim($matches[1]));
+        }
+
+        return 'Mixed Variety';
     }
 
     /**
@@ -283,11 +318,10 @@ class CropController extends Controller
                     'tray_id' => $trayIdentifier,
                     'tray_number' => str_pad($trayNumber, 2, '0', STR_PAD_LEFT),
                     'tray_type' => '10x20', // Default tray type
+                    'recipe_id' => $validated['recipe_id'],
                     'current_stage_id' => $soakingStage ? $soakingStage->id : 1,
-                    'current_stage' => Crop::STAGE_SOAKING, // Set the stage string value
                     'status' => 'active',
                     'soak_started_at' => now(),
-                    'stage_started_at' => now(), // Track when stage started
                     'location' => $validated['location'] . ' - ' . $trayIdentifier,
                     'position_x' => (($trayNumber - 1) % 10) + 1,
                     'position_y' => floor(($trayNumber - 1) / 10) + 1,
@@ -500,7 +534,10 @@ class CropController extends Controller
                     $currentIndex = array_search($crop->current_stage, $stages);
 
                     if ($currentIndex !== false && $currentIndex < count($stages) - 1) {
-                        $crop->advanceStage();
+                        // Use provided date or current timestamp
+                        $stageChangeDate = isset($validated['stage_change_date']) ?
+                            \Carbon\Carbon::parse($validated['stage_change_date']) : now();
+                        $crop->advanceStage($stageChangeDate);
                         $advancedCount++;
                     } else {
                         $errors[] = "Crop {$crop->batch_number} is already at the final stage.";
@@ -565,7 +602,10 @@ class CropController extends Controller
                         $currentIndex = array_search($crop->current_stage, $stages);
 
                         if ($currentIndex !== false && $currentIndex < count($stages) - 1) {
-                            $crop->advanceStage();
+                            // Use provided date or current timestamp
+                            $stageChangeDate = isset($validated['stage_change_date']) ?
+                                \Carbon\Carbon::parse($validated['stage_change_date']) : now();
+                            $crop->advanceStage($stageChangeDate);
                             $batchAdvanced++;
                             $advancedCount++;
                         }

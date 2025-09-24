@@ -52,6 +52,15 @@ Route::prefix('admin')->middleware(['auth', 'verified'])->group(function () {
         ->name('crops.bulk-delete');
     Route::post('/crops/bulk-delete-batches', [\App\Http\Controllers\CropController::class, 'bulkDeleteBatches'])
         ->name('crops.bulk-delete-batches');
+
+    // Seed Catalog Management Routes
+    Route::resource('seed-catalog', \App\Http\Controllers\SeedCatalogController::class);
+    Route::post('/seed-catalog/bulk-action', [\App\Http\Controllers\SeedCatalogController::class, 'bulkAction'])
+        ->name('seed-catalog.bulk-action');
+    Route::post('/seed-catalog/import', [\App\Http\Controllers\SeedCatalogController::class, 'import'])
+        ->name('seed-catalog.import');
+    Route::get('/seed-catalog/export', [\App\Http\Controllers\SeedCatalogController::class, 'export'])
+        ->name('seed-catalog.export');
 });
 
 require __DIR__.'/auth.php';

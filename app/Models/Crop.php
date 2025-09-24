@@ -77,12 +77,11 @@ class Crop extends Model
     const STAGE_GERMINATION = 'germination';
     const STAGE_BLACKOUT = 'blackout';
     const STAGE_LIGHT = 'light';
-    const STAGE_HARVEST_READY = 'harvest_ready';
     const STAGE_HARVESTED = 'harvested';
 
     // Crop statuses
     const STATUS_ACTIVE = 'active';
-    const STATUS_COMPLETED = 'completed';
+    const STATUS_HARVESTED = 'harvested';
     const STATUS_FAILED = 'failed';
     const STATUS_CANCELLED = 'cancelled';
 
@@ -94,7 +93,6 @@ class Crop extends Model
             self::STAGE_GERMINATION => 'Germination',
             self::STAGE_BLACKOUT => 'Blackout',
             self::STAGE_LIGHT => 'Light',
-            self::STAGE_HARVEST_READY => 'Ready to Harvest',
             self::STAGE_HARVESTED => 'Harvested'
         ];
     }
@@ -103,7 +101,7 @@ class Crop extends Model
     {
         return [
             self::STATUS_ACTIVE => 'Active',
-            self::STATUS_COMPLETED => 'Completed',
+            self::STATUS_HARVESTED => 'Harvested',
             self::STATUS_FAILED => 'Failed',
             self::STATUS_CANCELLED => 'Cancelled'
         ];
@@ -173,6 +171,19 @@ class Crop extends Model
     }
 
     /**
+     * Get the current stage based on datetime columns
+     */
+    public function getCurrentStageAttribute(): string
+    {
+        if ($this->harvested_at) return self::STAGE_HARVESTED;
+        if ($this->light_started_at) return self::STAGE_LIGHT;
+        if ($this->blackout_started_at) return self::STAGE_BLACKOUT;
+        if ($this->germination_started_at) return self::STAGE_GERMINATION;
+        if ($this->soak_started_at) return self::STAGE_SOAKING;
+        return self::STAGE_PLANTED;
+    }
+
+    /**
      * Get stage color for UI
      */
     public function getStageColorAttribute(): string
@@ -182,33 +193,42 @@ class Crop extends Model
             self::STAGE_GERMINATION => 'indigo',
             self::STAGE_BLACKOUT => 'gray',
             self::STAGE_LIGHT => 'yellow',
-            self::STAGE_HARVEST_READY => 'green',
             self::STAGE_HARVESTED => 'emerald',
             default => 'slate'
         };
     }
 
     /**
-     * Advance to next stage
+     * Advance to next stage using individual datetime columns
      */
-    public function advanceStage(): void
+    public function advanceStage($stageChangeDate = null): void
     {
-        $stages = array_keys(self::getStages());
-        $currentIndex = array_search($this->current_stage, $stages);
+        $changeDate = $stageChangeDate ? \Carbon\Carbon::parse($stageChangeDate) : now();
+        $currentStage = $this->current_stage;
 
-        if ($currentIndex !== false && $currentIndex < count($stages) - 1) {
-            // Update to next stage (skip history since column doesn't exist)
-            $this->current_stage = $stages[$currentIndex + 1];
-            $this->stage_started_at = now();
-
-            // Update status if harvested
-            if ($this->current_stage === self::STAGE_HARVESTED) {
-                $this->status = self::STATUS_COMPLETED;
-                $this->actual_harvest_date = now();
-            }
-
-            $this->save();
+        switch ($currentStage) {
+            case self::STAGE_PLANTED:
+                $this->soak_started_at = $changeDate;
+                break;
+            case self::STAGE_SOAKING:
+                $this->germination_started_at = $changeDate;
+                break;
+            case self::STAGE_GERMINATION:
+                $this->blackout_started_at = $changeDate;
+                break;
+            case self::STAGE_BLACKOUT:
+                $this->light_started_at = $changeDate;
+                break;
+            case self::STAGE_LIGHT:
+                $this->harvested_at = $changeDate;
+                $this->status = 'harvested';
+                break;
+            default:
+                // Already at final stage or invalid stage
+                return;
         }
+
+        $this->save();
     }
 
     /**
@@ -224,7 +244,8 @@ class Crop extends Model
      */
     public function scopeHarvestReady($query)
     {
-        return $query->where('current_stage', self::STAGE_HARVEST_READY)
+        return $query->whereNotNull('light_started_at')
+                     ->whereNull('harvested_at')
                      ->where('status', self::STATUS_ACTIVE);
     }
 
@@ -246,7 +267,7 @@ class Crop extends Model
         return [
             'total_trays' => $batchTrays->count(),
             'active_trays' => $batchTrays->where('status', self::STATUS_ACTIVE)->count(),
-            'harvested_trays' => $batchTrays->where('status', self::STATUS_COMPLETED)->count(),
+            'harvested_trays' => $batchTrays->where('status', self::STATUS_HARVESTED)->count(),
             'failed_trays' => $batchTrays->where('status', self::STATUS_FAILED)->count(),
         ];
     }

@@ -18,7 +18,8 @@ import {
     BeakerIcon,
     TruckIcon,
     DocumentTextIcon,
-    WrenchScrewdriverIcon
+    WrenchScrewdriverIcon,
+    BookOpenIcon
 } from '@heroicons/vue/24/outline';
 
 const props = defineProps({
@@ -58,6 +59,11 @@ const menuItems = [
         title: 'Inventory',
         route: 'inventory.index',
         icon: BeakerIcon
+    },
+    {
+        title: 'Seed Catalog',
+        route: 'seed-catalog.index',
+        icon: BookOpenIcon
     },
     {
         title: 'Customers',
